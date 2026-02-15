@@ -1,0 +1,332 @@
+# Implementation Plan: XDG-Compliant Multi-Scope Configuration
+
+## Overview
+
+Implement a four-tier configuration system following XDG Base Directory Specification:
+- **System**: `/etc/xdg/skilz/` (or `$XDG_CONFIG_DIRS`)
+- **User**: `~/.config/skilz/` (or `$XDG_CONFIG_HOME`)
+- **Project**: `.skilz/config.json` (git-tracked)
+- **Local**: `.skilz/local.json` (git-ignored)
+
+This enables shared skill configurations in HPC/enterprise environments while preserving individual customization.
+
+## Motivation
+
+1. **Multi-user platforms**: HPC environments need system-wide defaults
+2. **Team collaboration**: Projects can define shared skill sets
+3. **Personal experimentation**: Local overrides for testing without affecting team
+4. **XDG compliance**: Honor standard environment variables (`XDG_CONFIG_HOME`, `XDG_CONFIG_DIRS`)
+
+## Current State
+
+Config lives in `~/.config/skilz/`:
+- `settings.json` - Main config (`claude_code_home`, `open_code_home`, `agent_default`)
+- `config.json` - Agent registry customizations
+
+**Limitation**: Hardcoded `Path.home() / ".config" / "skilz"` ignores `XDG_CONFIG_HOME`.
+
+## Design Decisions
+
+### D1: Configuration Scope Hierarchy
+
+| Scope | Location | Git-tracked | Use Case |
+|-------|----------|-------------|----------|
+| System | `$XDG_CONFIG_DIRS/skilz/config.json` | N/A | Enterprise/HPC defaults |
+| User | `$XDG_CONFIG_HOME/skilz/settings.json` | No | Personal preferences |
+| Project | `.skilz/config.json` | Yes | Team standards |
+| Local | `.skilz/local.json` | No | Personal project overrides |
+
+**Defaults:**
+- `XDG_CONFIG_HOME` → `~/.config`
+- `XDG_CONFIG_DIRS` → `/etc/xdg` (colon-separated, first match wins)
+
+### D2: Merge Strategy (Hybrid)
+
+Different config settings use different merge strategies:
+
+| Config Key | Type | Strategy | Rationale |
+|------------|------|----------|-----------|
+| `agent_default` | scalar | cascade | Only one agent can be default |
+| `claude_code_home` | scalar | cascade | Single path value |
+| `open_code_home` | scalar | cascade | Single path value |
+| `skill_dirs` | list | merge | Cumulative skill sources |
+| `disabled_skills` | list | merge | Accumulate exclusions |
+| `default_install_mode` | scalar | cascade | Single mode applies |
+
+**Cascade**: Most specific wins (local > project > user > system)
+**Merge**: All scopes combined, with optional `-prefix` to exclude
+
+### D3: Collection Merge Syntax
+
+For merged lists, support explicit removal:
+```json
+{
+  "skill_dirs": [
+    "/my/skills",
+    "-/unwanted/parent/skills"
+  ]
+}
+```
+
+Prefix `-` removes that entry from the merged result.
+
+For complete override (ignore parent scopes):
+```json
+{
+  "skill_dirs!": ["/only/these"]
+}
+```
+
+Suffix `!` on key name means "replace entirely, don't merge".
+
+### D4: Project Directory Detection
+
+Detect project root by walking up from `cwd` looking for:
+1. `.skilz/` directory
+2. `.git/` directory (fallback)
+
+Cache result per process to avoid repeated filesystem walks.
+
+### D5: Config File Format
+
+All scopes use JSON format for consistency with existing `settings.json`.
+
+```json
+{
+  "agent_default": "claude",
+  "skill_dirs": ["~/.config/skilz/skills"],
+  "disabled_skills": []
+}
+```
+
+### D6: Backwards Compatibility
+
+- Existing `~/.config/skilz/settings.json` continues to work unchanged
+- New scopes are additive; users who don't create system/project/local configs see no difference
+- Environment variables (`CLAUDE_CODE_HOME`, etc.) remain highest priority for scalars
+
+## File Structure
+
+### New/Modified Files
+
+| File | Change |
+|------|--------|
+| `src/skilz/config.py` | Add `ConfigScope` enum, `get_scoped_config()`, `resolve_config()` |
+| `src/skilz/config_scopes.py` | NEW: Scope resolution, path detection, merge logic |
+| `tests/test_config_scopes.py` | NEW: Tests for multi-scope resolution |
+| `docs/USER_MANUAL.md` | Update Configuration section |
+
+### Project Config Location
+
+```
+project/
+├── .skilz/
+│   ├── config.json      # git-tracked team config
+│   ├── local.json       # git-ignored personal overrides
+│   └── skills/          # optional local skill storage
+├── .gitignore           # should include .skilz/local.json
+```
+
+## Implementation
+
+### Phase 1: Honor XDG Environment Variables
+
+Minimal change to existing code:
+
+```python
+# config.py
+def get_xdg_config_home() -> Path:
+    """Get XDG_CONFIG_HOME, defaulting to ~/.config"""
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg).expanduser()
+    return Path.home() / ".config"
+
+def get_xdg_config_dirs() -> list[Path]:
+    """Get XDG_CONFIG_DIRS as list, defaulting to [/etc/xdg]"""
+    xdg = os.environ.get("XDG_CONFIG_DIRS")
+    if xdg:
+        return [Path(p) for p in xdg.split(":") if p]
+    return [Path("/etc/xdg")]
+
+CONFIG_DIR = get_xdg_config_home() / "skilz"
+```
+
+### Phase 2: Add System Scope
+
+```python
+def get_system_config() -> dict[str, Any]:
+    """Load config from system-wide XDG_CONFIG_DIRS."""
+    for config_dir in get_xdg_config_dirs():
+        config_path = config_dir / "skilz" / "config.json"
+        if config_path.exists():
+            return load_json(config_path)
+    return {}
+```
+
+### Phase 3: Add Project/Local Scopes
+
+```python
+# config_scopes.py
+
+class ConfigScope(Enum):
+    SYSTEM = "system"
+    USER = "user"
+    PROJECT = "project"
+    LOCAL = "local"
+
+def find_project_root(start: Path | None = None) -> Path | None:
+    """Find project root by walking up looking for .skilz/ or .git/"""
+    start = start or Path.cwd()
+    for parent in [start] + list(start.parents):
+        if (parent / ".skilz").is_dir():
+            return parent
+        if (parent / ".git").is_dir():
+            return parent
+    return None
+
+def get_scope_config(scope: ConfigScope, project_root: Path | None = None) -> dict:
+    """Load config for a specific scope."""
+    match scope:
+        case ConfigScope.SYSTEM:
+            return get_system_config()
+        case ConfigScope.USER:
+            return load_config()  # existing function
+        case ConfigScope.PROJECT:
+            if project_root:
+                path = project_root / ".skilz" / "config.json"
+                return load_json(path) if path.exists() else {}
+            return {}
+        case ConfigScope.LOCAL:
+            if project_root:
+                path = project_root / ".skilz" / "local.json"
+                return load_json(path) if path.exists() else {}
+            return {}
+```
+
+### Phase 4: Implement Merge Logic
+
+```python
+SCALAR_KEYS = {"agent_default", "claude_code_home", "open_code_home", "default_install_mode"}
+MERGE_KEYS = {"skill_dirs", "disabled_skills"}
+
+def resolve_config(project_root: Path | None = None) -> dict[str, Any]:
+    """
+    Resolve effective config by merging all scopes.
+    
+    Scalars: cascade (local > project > user > system > default)
+    Lists: merge (all scopes combined, respecting - prefix)
+    """
+    # Load all scopes
+    scopes = {
+        ConfigScope.SYSTEM: get_scope_config(ConfigScope.SYSTEM),
+        ConfigScope.USER: get_scope_config(ConfigScope.USER),
+        ConfigScope.PROJECT: get_scope_config(ConfigScope.PROJECT, project_root),
+        ConfigScope.LOCAL: get_scope_config(ConfigScope.LOCAL, project_root),
+    }
+    
+    result = DEFAULTS.copy()
+    
+    # Cascade scalars
+    for key in SCALAR_KEYS:
+        for scope in [ConfigScope.SYSTEM, ConfigScope.USER, ConfigScope.PROJECT, ConfigScope.LOCAL]:
+            if key in scopes[scope]:
+                result[key] = scopes[scope][key]
+    
+    # Merge lists
+    for key in MERGE_KEYS:
+        # Check for override (key!)
+        override_key = f"{key}!"
+        for scope in reversed([ConfigScope.SYSTEM, ConfigScope.USER, ConfigScope.PROJECT, ConfigScope.LOCAL]):
+            if override_key in scopes[scope]:
+                result[key] = scopes[scope][override_key]
+                break
+        else:
+            # Normal merge
+            merged = []
+            removals = set()
+            for scope in [ConfigScope.SYSTEM, ConfigScope.USER, ConfigScope.PROJECT, ConfigScope.LOCAL]:
+                for item in scopes[scope].get(key, []):
+                    if item.startswith("-"):
+                        removals.add(item[1:])
+                    else:
+                        if item not in merged:
+                            merged.append(item)
+            result[key] = [item for item in merged if item not in removals]
+    
+    # Apply environment variable overrides (highest priority for scalars)
+    for key, env_var in ENV_VARS.items():
+        env_value = os.environ.get(env_var)
+        if env_value is not None:
+            result[key] = env_value
+    
+    return result
+```
+
+### Phase 5: Update CLI Display
+
+Add `--scope` option to `skilz config show`:
+
+```bash
+$ skilz config show
+Configuration Scopes:
+  System:  /etc/xdg/skilz/config.json (not found)
+  User:    ~/.config/skilz/settings.json
+  Project: /home/user/myproject/.skilz/config.json (not found)
+  Local:   /home/user/myproject/.skilz/local.json (not found)
+
+Effective Configuration:
+  agent_default:     claude (from: user)
+  claude_code_home:  ~/.claude (from: default)
+  skill_dirs:        ~/.config/skilz/skills (from: user)
+```
+
+## Testing Strategy
+
+### Unit Tests
+
+1. **XDG variable handling**: Mock `XDG_CONFIG_HOME`, `XDG_CONFIG_DIRS`
+2. **Project root detection**: Various directory structures
+3. **Cascade resolution**: Verify most-specific wins
+4. **Merge resolution**: Verify all scopes combined
+5. **Removal syntax**: Test `-prefix` exclusion
+6. **Override syntax**: Test `key!` replacement
+7. **Backwards compatibility**: Existing configs work unchanged
+
+### Integration Tests
+
+1. System + user config interaction
+2. Project + local config interaction
+3. Full four-tier resolution
+4. Environment variable override
+
+## Migration Notes
+
+- No breaking changes; feature is purely additive
+- Existing users see no difference unless they create new scope configs
+- Document `.skilz/local.json` should be added to `.gitignore`
+
+## Open Questions
+
+1. **Should `skilz config --init` support `--scope` flag?**
+   - e.g., `skilz config --init --scope project` creates `.skilz/config.json`
+   - Recommendation: Yes, in Phase 2
+
+2. **Should we add `skilz config set --scope`?**
+   - e.g., `skilz config set agent_default claude --scope local`
+   - Recommendation: Yes, but can be deferred
+
+3. **Config validation across scopes?**
+   - Warn if local sets a value that shadows project?
+   - Recommendation: No, keep it simple; users know what they're doing
+
+## Implementation Order
+
+1. ✅ Honor `XDG_CONFIG_HOME` for user config (minimal, safe)
+2. Add `get_xdg_config_dirs()` for system scope
+3. Add project root detection
+4. Add project/local scope loading
+5. Implement merge/cascade logic
+6. Update `skilz config show` to display scopes
+7. Add tests
+8. Update documentation
