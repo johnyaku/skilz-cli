@@ -2,8 +2,11 @@
 
 This module handles loading, saving, and merging configuration from:
 1. Default values (hardcoded)
-2. Config file (~/.config/skilz/settings.json)
-3. Environment variables (CLAUDE_CODE_HOME, OPEN_CODE_HOME, AGENT_DEFAULT)
+2. System config ($XDG_CONFIG_DIRS/skilz/config.json)
+3. User config ($XDG_CONFIG_HOME/skilz/settings.json)
+4. Project config (.skilz/config.json)
+5. Local config (.skilz/local.json)
+6. Environment variables (CLAUDE_CODE_HOME, OPEN_CODE_HOME, AGENT_DEFAULT)
 """
 
 import json
@@ -11,8 +14,25 @@ import os
 from pathlib import Path
 from typing import Any, cast
 
-# Configuration file location (XDG standard)
-CONFIG_DIR = Path.home() / ".config" / "skilz"
+
+def get_xdg_config_home() -> Path:
+    """Get XDG_CONFIG_HOME, defaulting to ~/.config per XDG spec."""
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg).expanduser()
+    return Path.home() / ".config"
+
+
+def get_xdg_config_dirs() -> list[Path]:
+    """Get XDG_CONFIG_DIRS as list, defaulting to [/etc/xdg] per XDG spec."""
+    xdg = os.environ.get("XDG_CONFIG_DIRS")
+    if xdg:
+        return [Path(p) for p in xdg.split(":") if p]
+    return [Path("/etc/xdg")]
+
+
+# Configuration file location (XDG compliant)
+CONFIG_DIR = get_xdg_config_home() / "skilz"
 CONFIG_PATH = CONFIG_DIR / "settings.json"
 REGISTRY_CONFIG_PATH = CONFIG_DIR / "config.json"
 

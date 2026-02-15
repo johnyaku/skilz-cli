@@ -267,12 +267,69 @@ For detailed help: skilz <command> --help
     config_parser = subparsers.add_parser(
         "config",
         help="Show or modify configuration",
-        description="View current configuration or run setup wizard.",
+        description="View current configuration, get/set values, or run setup wizard.",
     )
     config_parser.add_argument(
         "--init",
         action="store_true",
         help="Run interactive configuration setup (or use -y for defaults)",
+    )
+    # Scope flags (mutually exclusive)
+    scope_group = config_parser.add_mutually_exclusive_group()
+    scope_group.add_argument(
+        "--system",
+        action="store_true",
+        help="Use system-wide config (/etc/xdg/skilz/)",
+    )
+    scope_group.add_argument(
+        "--global",
+        "--user",
+        action="store_true",
+        dest="user_scope",
+        help="Use user config (~/.config/skilz/)",
+    )
+    scope_group.add_argument(
+        "--project",
+        action="store_true",
+        help="Use project config (.skilz/config.json)",
+    )
+    scope_group.add_argument(
+        "--local",
+        action="store_true",
+        help="Use local config (.skilz/local.json)",
+    )
+    # Display options
+    config_parser.add_argument(
+        "--show-origin",
+        action="store_true",
+        help="Show effective values with their source scope",
+    )
+    config_parser.add_argument(
+        "--files",
+        action="store_true",
+        help="List config file paths and their status",
+    )
+    config_parser.add_argument(
+        "--list",
+        action="store_true",
+        dest="list_scope",
+        help="List all config values (optionally for a specific scope)",
+    )
+    config_parser.add_argument(
+        "--unset",
+        action="store_true",
+        help="Remove a config value",
+    )
+    # Positional args for get/set
+    config_parser.add_argument(
+        "key",
+        nargs="?",
+        help="Config key to get or set",
+    )
+    config_parser.add_argument(
+        "value",
+        nargs="?",
+        help="Value to set (omit to get current value)",
     )
 
     # Read command
