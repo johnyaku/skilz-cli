@@ -263,22 +263,134 @@ def resolve_config(project_root: Path | None = None) -> dict[str, Any]:
     return result
 ```
 
-### Phase 5: Update CLI Display
+### Phase 5: CLI Enhancements
 
-Add `--scope` option to `skilz config show`:
+#### CLI Pattern Research
+
+The XDG spec defines file locations, not CLI patterns. The de facto standard is established by git and dvc:
+
+| Tool | Scope Flags | Show Origin |
+|------|-------------|-------------|
+| `git config` | `--system`, `--global`, `--local` | `--show-origin` |
+| `dvc config` | `--system`, `--global`, `--project`, `--local` | `--show-origin` |
+
+We follow this pattern for consistency.
+
+#### Scope Flag Names
+
+| Our Scope | Flag | Alias | Rationale |
+|-----------|------|-------|-----------|
+| system | `--system` | — | Matches git/dvc |
+| user | `--global` | `--user` | `--global` matches git/dvc; `--user` matches XDG terminology |
+| project | `--project` | — | Matches dvc |
+| local | `--local` | — | Matches git/dvc |
+
+#### New CLI Commands
 
 ```bash
-$ skilz config show
-Configuration Scopes:
-  System:  /etc/xdg/skilz/config.json (not found)
-  User:    ~/.config/skilz/settings.json
-  Project: /home/user/myproject/.skilz/config.json (not found)
-  Local:   /home/user/myproject/.skilz/local.json (not found)
+# Show all config (enhanced from current)
+skilz config                         # Current behavior (backwards compatible)
+skilz config --show-origin           # Show effective values with source scope
+skilz config --show-origin -v        # Full audit: all values from all scopes
+skilz config --files                 # Show config file paths and status
 
-Effective Configuration:
-  agent_default:     claude (from: user)
-  claude_code_home:  ~/.claude (from: default)
-  skill_dirs:        ~/.config/skilz/skills (from: user)
+# Get a specific key
+skilz config agent_default
+skilz config agent_default --show-origin
+
+# Set a key (defaults to user scope, like git)
+skilz config agent_default claude
+skilz config --global agent_default cursor
+skilz config --project agent_default gemini
+skilz config --local agent_default aider
+skilz config --system agent_default claude  # requires sudo typically
+
+# Init at specific scope
+skilz config --init                  # Current behavior (user scope)
+skilz config --init --project        # Creates .skilz/config.json
+skilz config --init --local          # Creates .skilz/local.json
+
+# Unset a key
+skilz config --unset agent_default
+skilz config --unset --local agent_default
+
+# List specific scope only
+skilz config --list --system
+skilz config --list --local
+```
+
+#### `--show-origin` Output Format
+
+By default, `--show-origin` shows **only effective values** with their source:
+
+```
+$ skilz config --show-origin
+agent_default     = gemini             (project)
+claude_code_home  = ~/.claude          (user)
+open_code_home    = ~/.config/opencode (default)
+skill_dirs        = /opt/shared-skills, ~/.config/skilz/skills  (merged: system, user)
+```
+
+For merged values, shows all contributing scopes.
+
+#### `--files` Output Format
+
+Use `--files` to show config file locations and their status:
+
+```
+$ skilz config --files
+system:  /etc/xdg/skilz/config.json       (found)
+user:    ~/.config/skilz/settings.json    (found)
+project: .skilz/config.json               (not found)
+local:   .skilz/local.json                (not found)
+```
+
+#### Verbose Mode (`-v` / `--verbose`)
+
+Combine with `--show-origin` to show all values from all scopes (full audit):
+
+```
+$ skilz config --show-origin -v
+system:  /etc/xdg/skilz/config.json
+         skill_dirs = /opt/shared-skills
+
+user:    ~/.config/skilz/settings.json
+         agent_default = claude
+         claude_code_home = ~/.claude
+
+project: .skilz/config.json
+         agent_default = gemini
+
+local:   .skilz/local.json (not found)
+
+effective:
+  agent_default     = gemini             (project)
+  claude_code_home  = ~/.claude          (user)
+  skill_dirs        = /opt/shared-skills, ~/.config/skilz/skills  (merged: system, user)
+```
+
+#### Argument Parser Changes
+
+```python
+# Scope flags (mutually exclusive)
+scope_group = config_parser.add_mutually_exclusive_group()
+scope_group.add_argument("--system", action="store_true", help="Use system-wide config")
+scope_group.add_argument("--global", "--user", action="store_true", dest="user_scope", 
+                         help="Use user config (default for writes)")
+scope_group.add_argument("--project", action="store_true", help="Use project config (.skilz/config.json)")
+scope_group.add_argument("--local", action="store_true", help="Use local config (.skilz/local.json)")
+
+# Display options
+config_parser.add_argument("--show-origin", action="store_true", 
+                          help="Show effective values with their source scope")
+config_parser.add_argument("--files", action="store_true", 
+                          help="List config file paths and their status")
+config_parser.add_argument("--list", action="store_true", help="List all config values")
+config_parser.add_argument("--unset", action="store_true", help="Remove a config value")
+
+# Positional args for get/set
+config_parser.add_argument("key", nargs="?", help="Config key to get or set")
+config_parser.add_argument("value", nargs="?", help="Value to set (omit to get current value)")
 ```
 
 ## Testing Strategy
@@ -305,28 +417,30 @@ Effective Configuration:
 - No breaking changes; feature is purely additive
 - Existing users see no difference unless they create new scope configs
 - Document `.skilz/local.json` should be added to `.gitignore`
+- Existing `skilz config` and `skilz config --init` work unchanged
+
+## Resolved Design Decisions
+
+1. **CLI scope flags**: Use `--system`, `--global`/`--user`, `--project`, `--local` matching git/dvc pattern
+2. **Show origin**: Implement `--show-origin` flag showing source of each value
+3. **Get/set syntax**: `skilz config key` to get, `skilz config key value` to set (git-style)
 
 ## Open Questions
 
-1. **Should `skilz config --init` support `--scope` flag?**
-   - e.g., `skilz config --init --scope project` creates `.skilz/config.json`
-   - Recommendation: Yes, in Phase 2
-
-2. **Should we add `skilz config set --scope`?**
-   - e.g., `skilz config set agent_default claude --scope local`
-   - Recommendation: Yes, but can be deferred
-
-3. **Config validation across scopes?**
+1. **Config validation across scopes?**
    - Warn if local sets a value that shadows project?
    - Recommendation: No, keep it simple; users know what they're doing
 
 ## Implementation Order
 
-1. ✅ Honor `XDG_CONFIG_HOME` for user config (minimal, safe)
+1. Honor `XDG_CONFIG_HOME` for user config (minimal, safe)
 2. Add `get_xdg_config_dirs()` for system scope
 3. Add project root detection
 4. Add project/local scope loading
-5. Implement merge/cascade logic
-6. Update `skilz config show` to display scopes
-7. Add tests
-8. Update documentation
+5. Implement merge/cascade logic in new `config_scopes.py`
+6. Add CLI scope flags (`--system`, `--global`, `--project`, `--local`)
+7. Add `--show-origin` display
+8. Add get/set by key (`skilz config key [value]`)
+9. Add `--unset` support
+10. Add tests for all new functionality
+11. Update USER_MANUAL.md documentation
