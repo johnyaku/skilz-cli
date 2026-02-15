@@ -39,7 +39,7 @@ class ConfigScope(Enum):
 SCALAR_KEYS = {"agent_default", "claude_code_home", "open_code_home", "default_install_mode"}
 
 # Keys that use merge (all scopes combined)
-MERGE_KEYS = {"skill_dirs", "disabled_skills"}
+MERGE_KEYS = {"skill_dirs", "disabled_skills", "registry_sources"}
 
 
 def find_project_root(start: Path | None = None) -> Path | None:

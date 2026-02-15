@@ -676,6 +676,7 @@ The XDG environment variables are honored:
 | `default_install_mode` | scalar | Default install mode (`copy`/`symlink`) | `null` |
 | `skill_dirs` | list | Additional skill directories to search | `[]` |
 | `disabled_skills` | list | Skills to exclude | `[]` |
+| `registry_sources` | list | Additional registry files to search | `[]` |
 
 ### Cascade vs Merge
 
@@ -814,6 +815,21 @@ Skilz reads skill definitions from registry files in YAML format.
 |----------|-------|
 | `.skilz/registry.yaml` | Project-level (current directory) |
 | `~/.skilz/registry.yaml` | User-level (home directory) |
+| `registry_sources` config | Additional registries (merged from all config scopes) |
+
+**Team/Enterprise Registries:**
+
+Use `registry_sources` to share approved skills across a team:
+
+```bash
+# System admin: define shared registry
+sudo skilz config --system registry_sources '["/opt/team/skilz/registry.yaml"]'
+
+# Or in project config for team-level sharing
+skilz config --project registry_sources '["/mnt/shared/skilz/approved.yaml"]'
+```
+
+The shared registry is searched after local registries, so users can override with local customizations.
 
 **Registry Format:**
 

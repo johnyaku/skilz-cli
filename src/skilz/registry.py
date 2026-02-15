@@ -6,6 +6,7 @@ from typing import Any
 
 import yaml
 
+from skilz.config_scopes import resolve_config
 from skilz.errors import GitError, RegistryError, SkillNotFoundError
 
 
@@ -41,6 +42,11 @@ def get_registry_paths(project_dir: Path | None = None) -> list[Path]:
     """
     Get the list of registry paths to search, in priority order.
 
+    Order:
+    1. Project-level registry (.skilz/registry.yaml) - highest priority
+    2. User-level registry (~/.skilz/registry.yaml)
+    3. Configured registry_sources (from config scopes, merged)
+
     Args:
         project_dir: The project directory to check for .skilz/registry.yaml.
                     If None, uses current working directory.
@@ -55,9 +61,20 @@ def get_registry_paths(project_dir: Path | None = None) -> list[Path]:
     project_registry = project / ".skilz" / "registry.yaml"
     paths.append(project_registry)
 
-    # User-level registry (fallback)
+    # User-level registry
     user_registry = Path.home() / ".skilz" / "registry.yaml"
     paths.append(user_registry)
+
+    # Configured registry_sources (merged from all config scopes)
+    config = resolve_config(project_root=project)
+    registry_sources = config.get("registry_sources", [])
+    if isinstance(registry_sources, list):
+        for source in registry_sources:
+            if isinstance(source, str):
+                # Expand ~ and resolve path
+                source_path = Path(source).expanduser()
+                if source_path not in paths:
+                    paths.append(source_path)
 
     return paths
 

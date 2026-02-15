@@ -56,7 +56,7 @@ class TestGetRegistryPaths:
     def test_returns_project_and_user_paths(self, temp_dir):
         """Should return both project and user registry paths."""
         paths = get_registry_paths(temp_dir)
-        assert len(paths) == 2
+        assert len(paths) >= 2
         assert paths[0] == temp_dir / ".skilz" / "registry.yaml"
         assert paths[1] == Path.home() / ".skilz" / "registry.yaml"
 
@@ -64,6 +64,49 @@ class TestGetRegistryPaths:
         """Project path should have higher priority than user path."""
         paths = get_registry_paths(temp_dir)
         assert "home" not in str(paths[0]).lower() or str(temp_dir) in str(paths[0])
+
+    def test_registry_sources_from_config(self, temp_dir):
+        """Should include registry_sources from config."""
+        shared_registry = temp_dir / "shared" / "team-registry.yaml"
+        shared_registry.parent.mkdir(parents=True, exist_ok=True)
+        shared_registry.touch()
+
+        with patch(
+            "skilz.registry.resolve_config",
+            return_value={"registry_sources": [str(shared_registry)]},
+        ):
+            paths = get_registry_paths(temp_dir)
+
+        assert len(paths) == 3
+        assert paths[0] == temp_dir / ".skilz" / "registry.yaml"
+        assert paths[1] == Path.home() / ".skilz" / "registry.yaml"
+        assert paths[2] == shared_registry
+
+    def test_registry_sources_with_tilde_expansion(self, temp_dir):
+        """Should expand ~ in registry_sources paths."""
+        with patch(
+            "skilz.registry.resolve_config",
+            return_value={"registry_sources": ["~/custom-registry.yaml"]},
+        ):
+            paths = get_registry_paths(temp_dir)
+
+        # Third path should have ~ expanded
+        assert len(paths) == 3
+        assert paths[2] == Path.home() / "custom-registry.yaml"
+
+    def test_registry_sources_no_duplicates(self, temp_dir):
+        """Should not add duplicate paths."""
+        user_registry = Path.home() / ".skilz" / "registry.yaml"
+
+        with patch(
+            "skilz.registry.resolve_config",
+            return_value={"registry_sources": [str(user_registry)]},
+        ):
+            paths = get_registry_paths(temp_dir)
+
+        # Should still be only 2 paths since user_registry is already included
+        assert len(paths) == 2
+        assert paths.count(user_registry) == 1
 
 
 class TestLoadRegistry:
