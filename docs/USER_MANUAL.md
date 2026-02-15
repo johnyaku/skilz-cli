@@ -688,7 +688,7 @@ local > project > user > system > default
 
 Example: If user sets `agent_default: claude` but project sets `agent_default: gemini`, the project value is used when in that project.
 
-**List settings merge** (all scopes combined):
+**List settings merge** (all scopes combined, ∪ = set union):
 ```
 system ∪ user ∪ project ∪ local
 ```
