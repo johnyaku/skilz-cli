@@ -129,139 +129,11 @@ project/
 
 ## Implementation
 
-### Phase 1: Honor XDG Environment Variables
-
-Minimal change to existing code:
-
-```python
-# config.py
-def get_xdg_config_home() -> Path:
-    """Get XDG_CONFIG_HOME, defaulting to ~/.config"""
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    if xdg:
-        return Path(xdg).expanduser()
-    return Path.home() / ".config"
-
-def get_xdg_config_dirs() -> list[Path]:
-    """Get XDG_CONFIG_DIRS as list, defaulting to [/etc/xdg]"""
-    xdg = os.environ.get("XDG_CONFIG_DIRS")
-    if xdg:
-        return [Path(p) for p in xdg.split(":") if p]
-    return [Path("/etc/xdg")]
-
-CONFIG_DIR = get_xdg_config_home() / "skilz"
-```
-
-### Phase 2: Add System Scope
-
-```python
-def get_system_config() -> dict[str, Any]:
-    """Load config from system-wide XDG_CONFIG_DIRS."""
-    for config_dir in get_xdg_config_dirs():
-        config_path = config_dir / "skilz" / "config.json"
-        if config_path.exists():
-            return load_json(config_path)
-    return {}
-```
-
-### Phase 3: Add Project/Local Scopes
-
-```python
-# config_scopes.py
-
-class ConfigScope(Enum):
-    SYSTEM = "system"
-    USER = "user"
-    PROJECT = "project"
-    LOCAL = "local"
-
-def find_project_root(start: Path | None = None) -> Path | None:
-    """Find project root by walking up looking for .skilz/ or .git/"""
-    start = start or Path.cwd()
-    for parent in [start] + list(start.parents):
-        if (parent / ".skilz").is_dir():
-            return parent
-        if (parent / ".git").is_dir():
-            return parent
-    return None
-
-def get_scope_config(scope: ConfigScope, project_root: Path | None = None) -> dict:
-    """Load config for a specific scope."""
-    match scope:
-        case ConfigScope.SYSTEM:
-            return get_system_config()
-        case ConfigScope.USER:
-            return load_config()  # existing function
-        case ConfigScope.PROJECT:
-            if project_root:
-                path = project_root / ".skilz" / "config.json"
-                return load_json(path) if path.exists() else {}
-            return {}
-        case ConfigScope.LOCAL:
-            if project_root:
-                path = project_root / ".skilz" / "local.json"
-                return load_json(path) if path.exists() else {}
-            return {}
-```
-
-### Phase 4: Implement Merge Logic
-
-```python
-SCALAR_KEYS = {"agent_default", "claude_code_home", "open_code_home", "default_install_mode"}
-MERGE_KEYS = {"skill_dirs", "disabled_skills"}
-
-def resolve_config(project_root: Path | None = None) -> dict[str, Any]:
-    """
-    Resolve effective config by merging all scopes.
-    
-    Scalars: cascade (local > project > user > system > default)
-    Lists: merge (all scopes combined, respecting - prefix)
-    """
-    # Load all scopes
-    scopes = {
-        ConfigScope.SYSTEM: get_scope_config(ConfigScope.SYSTEM),
-        ConfigScope.USER: get_scope_config(ConfigScope.USER),
-        ConfigScope.PROJECT: get_scope_config(ConfigScope.PROJECT, project_root),
-        ConfigScope.LOCAL: get_scope_config(ConfigScope.LOCAL, project_root),
-    }
-    
-    result = DEFAULTS.copy()
-    
-    # Cascade scalars
-    for key in SCALAR_KEYS:
-        for scope in [ConfigScope.SYSTEM, ConfigScope.USER, ConfigScope.PROJECT, ConfigScope.LOCAL]:
-            if key in scopes[scope]:
-                result[key] = scopes[scope][key]
-    
-    # Merge lists
-    for key in MERGE_KEYS:
-        # Check for override (key!)
-        override_key = f"{key}!"
-        for scope in reversed([ConfigScope.SYSTEM, ConfigScope.USER, ConfigScope.PROJECT, ConfigScope.LOCAL]):
-            if override_key in scopes[scope]:
-                result[key] = scopes[scope][override_key]
-                break
-        else:
-            # Normal merge
-            merged = []
-            removals = set()
-            for scope in [ConfigScope.SYSTEM, ConfigScope.USER, ConfigScope.PROJECT, ConfigScope.LOCAL]:
-                for item in scopes[scope].get(key, []):
-                    if item.startswith("-"):
-                        removals.add(item[1:])
-                    else:
-                        if item not in merged:
-                            merged.append(item)
-            result[key] = [item for item in merged if item not in removals]
-    
-    # Apply environment variable overrides (highest priority for scalars)
-    for key, env_var in ENV_VARS.items():
-        env_value = os.environ.get(env_var)
-        if env_value is not None:
-            result[key] = env_value
-    
-    return result
-```
+Implementation details moved to source code. See:
+- [src/skilz/config.py](../../src/skilz/config.py) - XDG functions
+- [src/skilz/config_scopes.py](../../src/skilz/config_scopes.py) - Scope resolution and merge logic
+- [src/skilz/commands/config_cmd.py](../../src/skilz/commands/config_cmd.py) - CLI handlers
+- [tests/test_config_scopes.py](../../tests/test_config_scopes.py) - 38 tests
 
 ### Phase 5: CLI Enhancements
 
@@ -369,30 +241,6 @@ effective:
   skill_dirs        = /opt/shared-skills, ~/.config/skilz/skills  (merged: system, user)
 ```
 
-#### Argument Parser Changes
-
-```python
-# Scope flags (mutually exclusive)
-scope_group = config_parser.add_mutually_exclusive_group()
-scope_group.add_argument("--system", action="store_true", help="Use system-wide config")
-scope_group.add_argument("--global", "--user", action="store_true", dest="user_scope", 
-                         help="Use user config (default for writes)")
-scope_group.add_argument("--project", action="store_true", help="Use project config (.skilz/config.json)")
-scope_group.add_argument("--local", action="store_true", help="Use local config (.skilz/local.json)")
-
-# Display options
-config_parser.add_argument("--show-origin", action="store_true", 
-                          help="Show effective values with their source scope")
-config_parser.add_argument("--files", action="store_true", 
-                          help="List config file paths and their status")
-config_parser.add_argument("--list", action="store_true", help="List all config values")
-config_parser.add_argument("--unset", action="store_true", help="Remove a config value")
-
-# Positional args for get/set
-config_parser.add_argument("key", nargs="?", help="Config key to get or set")
-config_parser.add_argument("value", nargs="?", help="Value to set (omit to get current value)")
-```
-
 ## Testing Strategy
 
 ### Unit Tests
@@ -433,14 +281,20 @@ config_parser.add_argument("value", nargs="?", help="Value to set (omit to get c
 
 ## Implementation Order
 
-1. Honor `XDG_CONFIG_HOME` for user config (minimal, safe)
-2. Add `get_xdg_config_dirs()` for system scope
-3. Add project root detection
-4. Add project/local scope loading
-5. Implement merge/cascade logic in new `config_scopes.py`
-6. Add CLI scope flags (`--system`, `--global`, `--project`, `--local`)
-7. Add `--show-origin` display
-8. Add get/set by key (`skilz config key [value]`)
-9. Add `--unset` support
-10. Add tests for all new functionality
-11. Update USER_MANUAL.md documentation
+1. ✅ Honor `XDG_CONFIG_HOME` for user config (minimal, safe)
+2. ✅ Add `get_xdg_config_dirs()` for system scope
+3. ✅ Add project root detection
+4. ✅ Add project/local scope loading
+5. ✅ Implement merge/cascade logic in new `config_scopes.py`
+6. ✅ Add CLI scope flags (`--system`, `--global`, `--project`, `--local`)
+7. ✅ Add `--show-origin` display
+8. ✅ Add get/set by key (`skilz config key [value]`)
+9. ✅ Add `--unset` support
+10. ✅ Add tests for all new functionality (38 tests)
+11. ✅ Update USER_MANUAL.md documentation
+
+## Status
+
+**Completed**: February 2026
+
+All features implemented and tested. See commit `81218a2` on branch `feature/xdg-config-scopes`.

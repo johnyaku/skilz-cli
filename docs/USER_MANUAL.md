@@ -651,31 +651,112 @@ Configuration saved to ~/.config/skilz/settings.json
 
 ## Configuration
 
-### Config File
+Skilz supports a four-tier XDG-compliant configuration system, enabling shared configuration in enterprise/HPC environments while preserving individual customization.
 
-Skilz stores configuration in `~/.config/skilz/settings.json`:
+### Configuration Scopes
 
+| Scope | Location | Git-tracked | Use Case |
+|-------|----------|-------------|----------|
+| **System** | `/etc/xdg/skilz/config.json` | N/A | Enterprise/HPC defaults |
+| **User** | `~/.config/skilz/settings.json` | No | Personal preferences |
+| **Project** | `.skilz/config.json` | Yes | Team standards |
+| **Local** | `.skilz/local.json` | No | Personal project overrides |
+
+The XDG environment variables are honored:
+- `XDG_CONFIG_HOME` overrides the user config location (default: `~/.config`)
+- `XDG_CONFIG_DIRS` overrides the system config search path (default: `/etc/xdg`)
+
+### Configuration Settings
+
+| Setting | Type | Description | Default |
+|---------|------|-------------|---------|
+| `claude_code_home` | scalar | Claude Code home directory | `~/.claude` |
+| `open_code_home` | scalar | OpenCode home directory | `~/.config/opencode` |
+| `agent_default` | scalar | Default agent for commands | `null` (auto-detect) |
+| `default_install_mode` | scalar | Default install mode (`copy`/`symlink`) | `null` |
+| `skill_dirs` | list | Additional skill directories to search | `[]` |
+| `disabled_skills` | list | Skills to exclude | `[]` |
+
+### Cascade vs Merge
+
+Different settings use different resolution strategies:
+
+**Scalar settings cascade** (most specific wins):
+```
+local > project > user > system > default
+```
+
+Example: If user sets `agent_default: claude` but project sets `agent_default: gemini`, the project value is used when in that project.
+
+**List settings merge** (all scopes combined):
+```
+system ∪ user ∪ project ∪ local
+```
+
+Example: System defines `/opt/shared-skills`, user adds `~/my-skills`, project adds `./project-skills` — all three are searched.
+
+**Removal syntax**: Prefix with `-` to remove an item from parent scopes:
 ```json
 {
-  "claude_code_home": "/custom/path/to/claude",
-  "open_code_home": "/custom/path/to/opencode",
-  "agent_default": "opencode"
+  "skill_dirs": ["-/unwanted/path", "/my/replacement"]
 }
 ```
 
-**Configuration Settings:**
+**Override syntax**: Suffix key with `!` to replace entirely (ignore parent scopes):
+```json
+{
+  "skill_dirs!": ["/only/these/skills"]
+}
+```
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `claude_code_home` | Claude Code home directory | `~/.claude` |
-| `open_code_home` | OpenCode home directory | `~/.config/opencode` |
-| `agent_default` | Default agent for commands | `null` (auto-detect) |
+### Using skilz config
 
-Setting `agent_default` to `"opencode"` means you won't need to type `--agent opencode` on every command.
+View and modify configuration from the command line:
+
+```bash
+# Show current configuration (legacy format)
+skilz config
+
+# Show effective values with their source
+skilz config --show-origin
+
+# Show all values from all scopes (verbose)
+skilz -v config --show-origin
+
+# Show config file locations
+skilz config --files
+
+# Get a specific value
+skilz config agent_default
+
+# Set a value (defaults to user scope)
+skilz config agent_default claude
+
+# Set at specific scope
+skilz config --project agent_default gemini
+skilz config --local agent_default cursor
+skilz config --system agent_default claude  # requires sudo
+
+# Remove a value
+skilz config --unset agent_default
+skilz config --unset --project agent_default
+
+# List values for a specific scope
+skilz config --list --project
+```
+
+**Scope flags:**
+
+| Flag | Alias | Scope |
+|------|-------|-------|
+| `--system` | — | System-wide config |
+| `--global` | `--user` | User config (default for writes) |
+| `--project` | — | Project config (`.skilz/config.json`) |
+| `--local` | — | Local config (`.skilz/local.json`) |
 
 ### Environment Variables
 
-Environment variables override config file values:
+Environment variables override all config file values:
 
 | Variable | Overrides |
 |----------|-----------|
@@ -699,11 +780,29 @@ AGENT_DEFAULT=opencode skilz list
 Configuration values are resolved in this order (lowest to highest priority):
 
 1. **Default values** - Built-in defaults
-2. **Config file** - `~/.config/skilz/settings.json`
-3. **Environment variables** - `CLAUDE_CODE_HOME`, etc.
-4. **Command line** - `--agent` flag
+2. **System config** - `/etc/xdg/skilz/config.json`
+3. **User config** - `~/.config/skilz/settings.json`
+4. **Project config** - `.skilz/config.json`
+5. **Local config** - `.skilz/local.json`
+6. **Environment variables** - `CLAUDE_CODE_HOME`, etc.
+7. **Command line** - `--agent` flag
 
-Example: If your config file has `agent_default: claude`, but you set `AGENT_DEFAULT=opencode` in your shell, then opencode will be used. But if you also add `--agent claude` to your command, claude will be used.
+For list settings (like `skill_dirs`), scopes 2-5 are merged rather than overridden.
+
+### Project Setup
+
+To use project/local configuration, add `.skilz/local.json` to your `.gitignore`:
+
+```bash
+# In your project
+echo ".skilz/local.json" >> .gitignore
+
+# Create project config (git-tracked, shared with team)
+skilz config --project agent_default gemini
+
+# Create local config (git-ignored, personal)
+skilz config --local agent_default cursor
+```
 
 ### Registry Files
 
