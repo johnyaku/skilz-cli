@@ -293,8 +293,67 @@ effective:
 10. ✅ Add tests for all new functionality (38 tests)
 11. ✅ Update USER_MANUAL.md documentation
 
+## Install Scopes (Extension)
+
+Following the config scopes pattern, we extended `skilz install` with XDG-compliant installation scopes for team/enterprise sharing.
+
+### Design Decision: Install Scope Hierarchy
+
+| Scope | Flag | Location | Use Case |
+|-------|------|----------|----------|
+| Agent (default) | (none) | Agent's dir (`~/.claude/skills/`) | Normal installs |
+| Project | `-p, --project` | Agent's project dir (`.claude/skills/`) | Project-specific skills |
+| User | `--user, --global` | `$XDG_DATA_HOME/skilz/skills/` | User-level shared skills |
+| System | `--system` | `$XDG_DATA_DIRS[0]/skilz/skills/` | Team/enterprise shared skills |
+
+**XDG Data Defaults:**
+- `XDG_DATA_HOME` → `~/.local/share`
+- `XDG_DATA_DIRS` → `/usr/local/share:/usr/share`
+
+### Rationale
+
+1. **Agent installs** (default): Skills go directly to agent's expected location
+2. **Scoped installs** (`--system`, `--user`): Skills go to skilz-managed directories, independent of any agent
+
+Scoped installs require `skill_dirs` config to make skills visible to agents:
+
+```bash
+# Admin installs to system location
+sudo skilz install --system plantuml
+
+# Admin configures skill_dirs so all users see it
+sudo skilz config --system skill_dirs '["/usr/local/share/skilz/skills"]'
+```
+
+### Implementation
+
+| File | Change |
+|------|--------|
+| `src/skilz/config.py` | Added `get_xdg_data_home()`, `get_xdg_data_dirs()` |
+| `src/skilz/config_scopes.py` | Added `InstallScope` enum, `get_install_scope_path()` |
+| `src/skilz/cli.py` | Added `--system`, `--user/--global` flags to install command |
+| `src/skilz/installer.py` | Added `install_scope` parameter, scope-aware installation |
+| `src/skilz/git_install.py` | Added `install_scope` pass-through |
+
+### CLI Examples
+
+```bash
+# Install to system location (requires sudo)
+sudo skilz install --system anthropics_skills/theme-factory
+
+# Install to user skilz directory
+skilz install --user anthropics_skills/theme-factory
+
+# Normal agent install (default behavior unchanged)
+skilz install anthropics_skills/theme-factory
+```
+
 ## Status
 
 **Completed**: February 2026
 
-All features implemented and tested. See commit `81218a2` on branch `feature/xdg-config-scopes`.
+All config scope features implemented and tested. Install scopes extension also implemented.
+
+See branch `feature/xdg-config-scopes`:
+- Config scopes: 38 tests
+- Install scopes: CLI flags, installer support, documentation
