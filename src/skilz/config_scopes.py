@@ -226,9 +226,11 @@ def get_scope_config(scope: ConfigScope, project_root: Path | None = None) -> di
     return {}
 
 
-def _merge_lists(scopes: dict[ConfigScope, dict[str, Any]], key: str) -> list[str]:
+def _merge_lists(
+    scopes: dict[ConfigScope, dict[str, Any]], key: str, defaults: list[str] | None = None
+) -> list[str]:
     """
-    Merge a list key across all scopes.
+    Merge a list key across all scopes, starting with defaults.
 
     Supports:
     - Normal items: added to merged list
@@ -238,11 +240,13 @@ def _merge_lists(scopes: dict[ConfigScope, dict[str, Any]], key: str) -> list[st
     Args:
         scopes: Dict mapping scope to its config
         key: The key to merge
+        defaults: Default list values to include before scope values
 
     Returns:
         Merged list with removals applied
     """
-    merged: list[str] = []
+    # Start with defaults
+    merged: list[str] = list(defaults) if defaults else []
     removals: set[str] = set()
 
     # Process scopes from broadest to most specific
@@ -309,7 +313,9 @@ def resolve_config(project_root: Path | None = None) -> dict[str, Any]:
                 break
 
         if not override_found:
-            result[key] = _merge_lists(scopes, key)
+            # Get defaults for merge keys (e.g., skill_dirs has XDG data dirs)
+            default_list = DEFAULTS.get(key) if isinstance(DEFAULTS.get(key), list) else None
+            result[key] = _merge_lists(scopes, key, default_list)
 
     # Apply environment variable overrides (highest priority for scalars)
     for key, env_var in ENV_VARS.items():
@@ -381,9 +387,12 @@ def get_config_with_origins(
                 break
 
         if not override_found:
-            merged_value = _merge_lists(scopes, key)
+            # Get defaults for merge keys (e.g., skill_dirs has XDG data dirs)
+            default_list = DEFAULTS.get(key) if isinstance(DEFAULTS.get(key), list) else None
+            merged_value = _merge_lists(scopes, key, default_list)
             # Find contributing scopes
             contributing = []
+            has_defaults = bool(default_list)
             for scope in [
                 ConfigScope.SYSTEM,
                 ConfigScope.USER,
@@ -393,7 +402,9 @@ def get_config_with_origins(
                 if scopes[scope].get(key):
                     contributing.append(scope.value)
 
-            if contributing:
+            if contributing and has_defaults:
+                source = f"merged: default, {', '.join(contributing)}"
+            elif contributing:
                 source = f"merged: {', '.join(contributing)}"
             else:
                 source = "default"

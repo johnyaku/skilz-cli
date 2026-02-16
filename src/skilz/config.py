@@ -12,7 +12,7 @@ This module handles loading, saving, and merging configuration from:
 import json
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 
 def get_xdg_config_home() -> Path:
@@ -52,11 +52,33 @@ CONFIG_DIR = get_xdg_config_home() / "skilz"
 CONFIG_PATH = CONFIG_DIR / "settings.json"
 REGISTRY_CONFIG_PATH = CONFIG_DIR / "config.json"
 
+
+def _get_default_skill_dirs() -> list[str]:
+    """Get default skill_dirs including XDG data directories.
+
+    Returns a list of paths where skilz looks for skills by default:
+    - ~/.local/share/skilz/skills/ (user installs)
+    - /usr/local/share/skilz/skills/ (system installs)
+    - /usr/share/skilz/skills/ (system packages)
+    """
+    dirs: list[str] = []
+
+    # User data dir first (most common)
+    dirs.append(str(get_xdg_data_home() / "skilz" / "skills"))
+
+    # System data dirs
+    for data_dir in get_xdg_data_dirs():
+        dirs.append(str(data_dir / "skilz" / "skills"))
+
+    return dirs
+
+
 # Default configuration values
-DEFAULTS: dict[str, str | None] = {
+DEFAULTS: dict[str, Any] = {
     "claude_code_home": str(Path.home() / ".claude"),
     "open_code_home": str(Path.home() / ".config" / "opencode"),
     "agent_default": None,  # None means auto-detect
+    "skill_dirs": _get_default_skill_dirs(),
 }
 
 # Environment variable names for each config key
