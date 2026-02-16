@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 from skilz.agents import AgentType
+from skilz.config_scopes import InstallScope
 from skilz.errors import InstallError
 
 # Type alias for install mode
@@ -273,13 +274,14 @@ def install_from_git(
     skill_filter_name: str | None = None,
     force_config: bool = False,
     config_file: str | None = None,  # SKILZ-65: Custom config file for git installs
+    install_scope: InstallScope | None = None,  # Scoped install destination
 ) -> int:
     """
     Install skill(s) from a git repository URL.
 
     Args:
         git_url: Git repository URL (HTTPS or SSH).
-        agent: Target agent type.
+        agent: Target agent type. Ignored if install_scope set.
         project_level: If True, install to project directory.
         verbose: If True, show detailed progress.
         mode: Installation mode ('copy' or 'symlink').
@@ -288,6 +290,7 @@ def install_from_git(
         skill_filter_name: If provided, install only the skill with this name.
         force_config: If True, write to config files even for native agents.
         config_file: Optional custom config file to update (requires project_level=True).
+        install_scope: If set, install to skilz-managed directory instead of agent directory.
 
     Returns:
         Exit code (0 for success, non-zero for error).
@@ -376,6 +379,7 @@ def install_from_git(
                     skill_name=skill.skill_name,
                     force_config=force_config,
                     config_file=config_file,  # SKILZ-65: Pass custom config file
+                    install_scope=install_scope,
                 )
 
                 installed_count += 1

@@ -31,6 +31,22 @@ def get_xdg_config_dirs() -> list[Path]:
     return [Path("/etc/xdg")]
 
 
+def get_xdg_data_home() -> Path:
+    """Get XDG_DATA_HOME, defaulting to ~/.local/share per XDG spec."""
+    xdg = os.environ.get("XDG_DATA_HOME")
+    if xdg:
+        return Path(xdg).expanduser()
+    return Path.home() / ".local" / "share"
+
+
+def get_xdg_data_dirs() -> list[Path]:
+    """Get XDG_DATA_DIRS as list, defaulting to [/usr/local/share, /usr/share] per XDG spec."""
+    xdg = os.environ.get("XDG_DATA_DIRS")
+    if xdg:
+        return [Path(p) for p in xdg.split(":") if p]
+    return [Path("/usr/local/share"), Path("/usr/share")]
+
+
 # Configuration file location (XDG compliant)
 CONFIG_DIR = get_xdg_config_home() / "skilz"
 CONFIG_PATH = CONFIG_DIR / "settings.json"

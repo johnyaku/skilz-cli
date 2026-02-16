@@ -24,6 +24,8 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config=None,
+            install_system=False,
+            install_user=False,
         )
 
         with patch("skilz.installer.install_skill") as mock_install:
@@ -39,6 +41,7 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config_file=None,
+            install_scope=None,
         )
 
     def test_install_with_agent(self):
@@ -55,6 +58,8 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config=None,
+            install_system=False,
+            install_user=False,
         )
 
         with patch("skilz.installer.install_skill") as mock_install:
@@ -70,6 +75,7 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config_file=None,
+            install_scope=None,
         )
 
     def test_install_with_claude_agent(self):
@@ -86,6 +92,8 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config=None,
+            install_system=False,
+            install_user=False,
         )
 
         with patch("skilz.installer.install_skill") as mock_install:
@@ -101,6 +109,7 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config_file=None,
+            install_scope=None,
         )
 
     def test_install_skill_not_found_error(self, capsys):
@@ -200,6 +209,8 @@ class TestCmdInstall:
             copy=False,
             symlink=False,
             # No verbose attribute - version_spec also omitted
+            install_system=False,
+            install_user=False,
         )
 
         with patch("skilz.installer.install_skill") as mock_install:
@@ -216,6 +227,7 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config_file=None,
+            install_scope=None,
         )
 
     def test_install_with_copy_flag(self):
@@ -232,6 +244,8 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config=None,
+            install_system=False,
+            install_user=False,
         )
 
         with patch("skilz.installer.install_skill") as mock_install:
@@ -247,6 +261,7 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config_file=None,
+            install_scope=None,
         )
 
     def test_install_with_symlink_flag(self):
@@ -263,6 +278,8 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config=None,
+            install_system=False,
+            install_user=False,
         )
 
         with patch("skilz.installer.install_skill") as mock_install:
@@ -278,6 +295,7 @@ class TestCmdInstall:
             version_spec=None,
             force_config=False,
             config_file=None,
+            install_scope=None,
         )
 
     def test_install_no_source_error(self, capsys):

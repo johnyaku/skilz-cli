@@ -23,6 +23,8 @@ from skilz.config import (
     ENV_VARS,
     get_xdg_config_dirs,
     get_xdg_config_home,
+    get_xdg_data_dirs,
+    get_xdg_data_home,
 )
 
 
@@ -33,6 +35,81 @@ class ConfigScope(Enum):
     USER = "user"
     PROJECT = "project"
     LOCAL = "local"
+
+
+class InstallScope(Enum):
+    """Install destination scope for skilz-managed skill locations.
+
+    AGENT: Install to agent's directory (e.g., ~/.claude/skills/) - default
+    SYSTEM: Install to /usr/local/share/skilz/skills/ (requires sudo)
+    USER: Install to ~/.local/share/skilz/skills/
+    PROJECT: Install to .skilz/skills/ in current project
+    """
+
+    AGENT = "agent"  # Default: use agent's skill directory
+    SYSTEM = "system"  # XDG system data dir
+    USER = "user"  # XDG user data dir
+    PROJECT = "project"  # Project-local .skilz/skills/
+
+
+def get_install_scope_path(scope: InstallScope, project_root: Path | None = None) -> Path:
+    """
+    Get the skill installation directory for a scope.
+
+    Args:
+        scope: The installation scope
+        project_root: Project root for PROJECT scope
+
+    Returns:
+        Path to skills directory for the scope
+
+    Raises:
+        ValueError: If PROJECT scope requested without project_root
+    """
+    match scope:
+        case InstallScope.SYSTEM:
+            # First entry of XDG_DATA_DIRS (typically /usr/local/share)
+            data_dirs = get_xdg_data_dirs()
+            return data_dirs[0] / "skilz" / "skills"
+        case InstallScope.USER:
+            return get_xdg_data_home() / "skilz" / "skills"
+        case InstallScope.PROJECT:
+            if not project_root:
+                project_root = find_project_root() or Path.cwd()
+            return project_root / ".skilz" / "skills"
+        case InstallScope.AGENT:
+            raise ValueError("AGENT scope requires agent-specific path resolution")
+    # Should never reach here, but satisfy type checker
+    raise ValueError(f"Unknown scope: {scope}")
+
+
+def get_registry_path_for_scope(scope: InstallScope, project_root: Path | None = None) -> Path:
+    """
+    Get the registry file path for recording installations at a scope.
+
+    Args:
+        scope: The installation scope
+        project_root: Project root for PROJECT scope
+
+    Returns:
+        Path to registry YAML file for the scope
+    """
+    match scope:
+        case InstallScope.SYSTEM:
+            # System registry in XDG config location
+            config_dirs = get_xdg_config_dirs()
+            return config_dirs[0] / "skilz" / "registry.yaml"
+        case InstallScope.USER:
+            return Path.home() / ".skilz" / "registry.yaml"
+        case InstallScope.PROJECT:
+            if not project_root:
+                project_root = find_project_root() or Path.cwd()
+            return project_root / ".skilz" / "registry.yaml"
+        case InstallScope.AGENT:
+            # Default to user registry for agent installs
+            return Path.home() / ".skilz" / "registry.yaml"
+    # Should never reach here
+    return Path.home() / ".skilz" / "registry.yaml"
 
 
 # Keys that use cascade (most-specific wins)

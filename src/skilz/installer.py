@@ -15,6 +15,7 @@ from skilz.agents import (
     supports_home_install,
 )
 from skilz.api_client import get_skill_id_format
+from skilz.config_scopes import InstallScope, get_install_scope_path, get_registry_path_for_scope
 from skilz.config_sync import SkillReference, sync_skill_to_configs
 from skilz.errors import InstallError
 from skilz.git_ops import (
@@ -101,13 +102,14 @@ def install_local_skill(
     skill_name: str | None = None,
     force_config: bool = False,
     config_file: str | None = None,  # SKILZ-50: Custom config file target
+    install_scope: InstallScope | None = None,  # Scoped install destination
 ) -> None:
     """
     Install a skill from a local directory.
 
     Args:
         source_path: Path to the local skill directory.
-        agent: Target agent ("claude" or "opencode"). Auto-detected if None.
+        agent: Target agent ("claude" or "opencode"). Auto-detected if None. Ignored if install_scope set.
         project_level: If True, install to project directory instead of user directory.
         verbose: If True, print detailed progress information.
         mode: Installation mode. Only "copy" is supported for local installs.
@@ -116,6 +118,7 @@ def install_local_skill(
         skill_name: Optional skill name (overrides source_path.name, used for git installs).
         force_config: If True, write to config files even for native agents.
         config_file: Optional config file to update (requires project_level=True).
+        install_scope: If set, install to skilz-managed directory instead of agent directory.
     """
     source_path = source_path.expanduser().resolve()
 
@@ -175,38 +178,51 @@ def install_local_skill(
                         file=sys.stderr,
                     )
 
-    # Step 1: Determine target agent
-    resolved_agent: ExtendedAgentType
-    if agent is None:
-        resolved_agent = cast(ExtendedAgentType, detect_agent())
+    # Step 1: Determine target directory
+    # If install_scope is set, use skilz-managed directory (no agent needed)
+    if install_scope is not None:
+        skills_dir = get_install_scope_path(install_scope)
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        target_dir = skills_dir / skill_name
+        resolved_agent = None  # No agent for scoped installs
+        location = install_scope.value
+
         if verbose:
-            print(f"Auto-detected agent: {get_agent_display_name(resolved_agent)}")
+            print(f"Installing to {install_scope.value} scope: {skills_dir}")
     else:
-        resolved_agent = agent
-        if verbose:
-            print(f"Using specified agent: {get_agent_display_name(resolved_agent)}")
+        # Standard agent-based installation
+        resolved_agent: ExtendedAgentType
+        if agent is None:
+            resolved_agent = cast(ExtendedAgentType, detect_agent())
+            if verbose:
+                print(f"Auto-detected agent: {get_agent_display_name(resolved_agent)}")
+        else:
+            resolved_agent = agent
+            if verbose:
+                print(f"Using specified agent: {get_agent_display_name(resolved_agent)}")
 
-    # Step 1a: Auto-detect project-level for agents without home support
-    if not project_level and not supports_home_install(resolved_agent):
-        project_level = True
-        # Always show message for Copilot, verbose for others
-        if resolved_agent == "copilot":
-            print(
-                "  Info: GitHub Copilot only supports project-level installation (.github/skills/)"
-            )
-        elif verbose:
-            agent_config = get_registry().get(resolved_agent)
-            project_path = agent_config.project_dir if agent_config else ".skilz/skills"
-            print(
-                f"  Note: {get_agent_display_name(resolved_agent)} only supports "
-                f"project-level installation ({project_path}/)"
-            )
+        # Step 1a: Auto-detect project-level for agents without home support
+        if not project_level and not supports_home_install(resolved_agent):
+            project_level = True
+            # Always show message for Copilot, verbose for others
+            if resolved_agent == "copilot":
+                print(
+                    "  Info: GitHub Copilot only supports project-level installation (.github/skills/)"
+                )
+            elif verbose:
+                agent_config = get_registry().get(resolved_agent)
+                project_path = agent_config.project_dir if agent_config else ".skilz/skills"
+                print(
+                    f"  Note: {get_agent_display_name(resolved_agent)} only supports "
+                    f"project-level installation ({project_path}/)"
+                )
 
-    # Step 2: Determine target directory
-    skills_dir = ensure_skills_dir(resolved_agent, project_level)
-    target_dir = skills_dir / skill_name
+        # Determine target directory
+        skills_dir = ensure_skills_dir(resolved_agent, project_level)
+        target_dir = skills_dir / skill_name
+        location = "project" if project_level else "user"
 
-    # Step 3: Copy files
+    # Step 2: Copy files
     if verbose:
         print(f"Installing local skill '{skill_name}' to {target_dir}...")
 
@@ -225,13 +241,15 @@ def install_local_skill(
     write_manifest(target_dir, manifest)
 
     # Success message
-    agent_name = get_agent_display_name(resolved_agent)
-    location = "project" if project_level else "user"
     source_label = "[git]" if is_git_source else "[local]"
-    print(f"Installed: {skill_name} -> {agent_name} ({location}) {source_label}")
+    if install_scope is not None:
+        print(f"Installed: {skill_name} -> {location} {source_label}")
+    else:
+        agent_name = get_agent_display_name(resolved_agent)
+        print(f"Installed: {skill_name} -> {agent_name} ({location}) {source_label}")
 
-    # Step 5: Sync skill reference to agent config files (project-level only)
-    if project_level:
+    # Step 5: Sync skill reference to agent config files (project-level only, agent installs only)
+    if project_level and install_scope is None:
         # Check if agent has native skill support (SKILZ-49)
         registry = get_registry()
         agent_config = registry.get_or_raise(resolved_agent)
@@ -289,13 +307,14 @@ def install_skill(
     version_spec: str | None = None,
     force_config: bool = False,
     config_file: str | None = None,  # SKILZ-50: Custom config file target
+    install_scope: InstallScope | None = None,  # Scoped install destination
 ) -> None:
     """
     Install a skill from the registry.
 
     Args:
         skill_id: The skill ID to install (e.g., "anthropics/web-artifacts-builder")
-        agent: Target agent ("claude" or "opencode"). Auto-detected if None.
+        agent: Target agent ("claude" or "opencode"). Auto-detected if None. Ignored if install_scope set.
         project_level: If True, install to project directory instead of user directory.
         verbose: If True, print detailed progress information.
         mode: Installation mode ("copy" or "symlink"). If None, uses agent's default.
@@ -309,46 +328,62 @@ def install_skill(
               - Other: Treat as tag (tries "X" and "vX" formats)
         force_config: If True, write to config files even for native agents.
         config_file: Optional config file to update (requires project_level=True).
+        install_scope: If set, install to skilz-managed directory instead of agent directory.
 
     Raises:
         SkillNotFoundError: If the skill ID is not found in any registry.
         GitError: If Git operations fail.
         InstallError: If installation fails for other reasons.
     """
-    # Step 1: Determine target agent
-    resolved_agent: ExtendedAgentType
-    if agent is None:
-        resolved_agent = cast(ExtendedAgentType, detect_agent())
+    # Step 1: Determine target directory
+    # If install_scope is set, use skilz-managed directory (no agent needed)
+    if install_scope is not None:
+        skills_dir = get_install_scope_path(install_scope)
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        resolved_agent = None
+        location = install_scope.value
+        # For scoped installs, always use copy mode
+        install_mode: InstallMode = "copy"
+
         if verbose:
-            print(f"Auto-detected agent: {get_agent_display_name(resolved_agent)}")
+            print(f"Installing to {install_scope.value} scope: {skills_dir}")
     else:
-        resolved_agent = agent
+        # Standard agent-based installation
+        resolved_agent: ExtendedAgentType
+        if agent is None:
+            resolved_agent = cast(ExtendedAgentType, detect_agent())
+            if verbose:
+                print(f"Auto-detected agent: {get_agent_display_name(resolved_agent)}")
+        else:
+            resolved_agent = agent
+            if verbose:
+                print(f"Using specified agent: {get_agent_display_name(resolved_agent)}")
+
+        # Step 1a: Auto-detect project-level for agents without home support
+        if not project_level and not supports_home_install(resolved_agent):
+            project_level = True
+            # Always show message for Copilot, verbose for others
+            if resolved_agent == "copilot":
+                print(
+                    "  Info: GitHub Copilot only supports project-level installation (.github/skills/)"
+                )
+            elif verbose:
+                agent_config = get_registry().get(resolved_agent)
+                project_path = agent_config.project_dir if agent_config else ".skilz/skills"
+                print(
+                    f"  Note: {get_agent_display_name(resolved_agent)} only supports "
+                    f"project-level installation ({project_path}/)"
+                )
+
+        location = "project" if project_level else "user"
+
+        # Step 1b: Determine installation mode
+        agent_default: InstallMode = cast(InstallMode, get_agent_default_mode(resolved_agent))
+        install_mode = determine_install_mode(mode, agent_default)
+
         if verbose:
-            print(f"Using specified agent: {get_agent_display_name(resolved_agent)}")
-
-    # Step 1a: Auto-detect project-level for agents without home support
-    if not project_level and not supports_home_install(resolved_agent):
-        project_level = True
-        # Always show message for Copilot, verbose for others
-        if resolved_agent == "copilot":
-            print(
-                "  Info: GitHub Copilot only supports project-level installation (.github/skills/)"
-            )
-        elif verbose:
-            agent_config = get_registry().get(resolved_agent)
-            project_path = agent_config.project_dir if agent_config else ".skilz/skills"
-            print(
-                f"  Note: {get_agent_display_name(resolved_agent)} only supports "
-                f"project-level installation ({project_path}/)"
-            )
-
-    # Step 1b: Determine installation mode
-    agent_default: InstallMode = cast(InstallMode, get_agent_default_mode(resolved_agent))
-    install_mode = determine_install_mode(mode, agent_default)
-
-    if verbose:
-        mode_source = "explicit" if mode else "agent default"
-        print(f"Install mode: {install_mode} ({mode_source})")
+            mode_source = "explicit" if mode else "agent default"
+            print(f"Install mode: {install_mode} ({mode_source})")
 
     # Step 2: Look up skill in registry
     if verbose:
@@ -398,8 +433,12 @@ def install_skill(
                 print("  Warning: --version only supported for GitHub repos, using default")
 
     # Step 3: Determine target directory
-    skills_dir = ensure_skills_dir(resolved_agent, project_level)
-    target_dir = skills_dir / skill_info.skill_name
+    if install_scope is not None:
+        # Already set up skills_dir earlier
+        target_dir = skills_dir / skill_info.skill_name
+    else:
+        skills_dir = ensure_skills_dir(resolved_agent, project_level)
+        target_dir = skills_dir / skill_info.skill_name
 
     # Step 4: Check if installation is needed
     should_install, reason = needs_install(target_dir, resolved_sha)
@@ -525,13 +564,15 @@ def install_skill(
 
     # Success message
     action = "Updated" if reason == "sha_mismatch" else "Installed"
-    agent_name = get_agent_display_name(resolved_agent)
-    location = "project" if project_level else "user"
     mode_suffix = f" [{install_mode}]" if verbose else ""
-    print(f"{action}: {skill_id} -> {agent_name} ({location}){mode_suffix}")
+    if install_scope is not None:
+        print(f"{action}: {skill_id} -> {location}{mode_suffix}")
+    else:
+        agent_name = get_agent_display_name(resolved_agent)
+        print(f"{action}: {skill_id} -> {agent_name} ({location}){mode_suffix}")
 
-    # Step 11: Sync skill reference to agent config files (project-level only)
-    if project_level:
+    # Step 11: Sync skill reference to agent config files (project-level only, agent installs only)
+    if project_level and install_scope is None:
         # Check if agent has native skill support (SKILZ-49)
         registry = get_registry()
         agent_config = registry.get_or_raise(resolved_agent)

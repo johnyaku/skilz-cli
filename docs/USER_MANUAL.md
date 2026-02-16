@@ -128,13 +128,26 @@ skilz install <skill-id> [options]
 **Options:**
 | Option | Description |
 |--------|-------------|
-| `--agent {gemini,opencode,openhands,claude,cline,codex,goose,roo,kilo,trae,droid,clawdbot,kiro-cli,pi,neovate,antigravity,cursor,windsurf,copilot,qwen,zencoder,amp,qoder,command-code,universal,aider,zed,crush,kimi,plandex}` | Target agent. Auto-detected if not specified. |
-| `--project` | Install to project directory instead of user directory |
+| `--agent {gemini,opencode,openhands,claude,cline,...}` | Target agent. Auto-detected if not specified. |
+| `-p, --project` | Install to agent's project directory (e.g., `.claude/skills/`) |
+| `--system` | Install to system skilz directory (`/usr/local/share/skilz/skills/`) |
+| `--user, --global` | Install to user skilz directory (`~/.local/share/skilz/skills/`) |
 | `-f, --file PATH` | Install from local filesystem path |
 | `-g, --git URL` | Install from Git repository URL |
 | `--copy` | Force copy installation (default for project-level) |
 | `--symlink` | Force symlink installation (default for user-level) |
 | `-v, --verbose` | Show detailed output |
+
+**Install Scopes:**
+
+| Scope | Location | Use Case |
+|-------|----------|----------|
+| (default) | Agent's user dir (`~/.claude/skills/`) | Normal installs |
+| `--project` | Agent's project dir (`.claude/skills/`) | Project-specific |
+| `--system` | `/usr/local/share/skilz/skills/` | Team/enterprise shared skills |
+| `--user` | `~/.local/share/skilz/skills/` | User-level shared skills |
+
+The `--system` and `--user` scopes install to skilz-managed directories independent of any specific agent. Use `skill_dirs` config to make these visible to agents.
 
 **Examples:**
 
@@ -157,6 +170,12 @@ skilz install -g https://github.com/user/skill-repo.git
 
 # Install to project directory (for testing or project-specific skills)
 skilz install anthropics_skills/theme-factory --project
+
+# Install to system location (for team/enterprise sharing)
+sudo skilz install --system anthropics_skills/theme-factory
+
+# Install to user skilz directory (agent-independent)
+skilz install --user anthropics_skills/theme-factory
 
 # Verbose output to see what's happening
 skilz install anthropics_skills/theme-factory -v

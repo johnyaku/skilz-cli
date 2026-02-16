@@ -105,12 +105,29 @@ For detailed help: skilz <command> --help
         metavar="AGENT",
         help=f"Target agent: {{{agents_str}}} (auto-detected if not specified)",
     )
-    install_parser.add_argument(
+
+    # Install scope flags (mutually exclusive)
+    install_scope_group = install_parser.add_mutually_exclusive_group()
+    install_scope_group.add_argument(
         "-p",
         "--project",
         action="store_true",
-        help="Install to project directory instead of user directory",
+        help="Install to agent's project directory (e.g., .claude/skills/)",
     )
+    install_scope_group.add_argument(
+        "--system",
+        action="store_true",
+        dest="install_system",
+        help="Install to system skilz directory (/usr/local/share/skilz/skills/)",
+    )
+    install_scope_group.add_argument(
+        "--user",
+        "--global",
+        action="store_true",
+        dest="install_user",
+        help="Install to user skilz directory (~/.local/share/skilz/skills/)",
+    )
+
     install_parser.add_argument(
         "--config",
         metavar="FILE",

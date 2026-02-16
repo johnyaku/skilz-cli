@@ -6,7 +6,23 @@ from pathlib import Path
 from typing import Literal
 
 from skilz.agents import AgentType
+from skilz.config_scopes import InstallScope
 from skilz.errors import SkilzError
+
+
+def _get_install_scope(args: argparse.Namespace) -> InstallScope | None:
+    """Determine the install scope from CLI flags.
+
+    Returns:
+        InstallScope if a scope flag was specified, None for default (agent) behavior.
+    """
+    if getattr(args, "install_system", False):
+        return InstallScope.SYSTEM
+    if getattr(args, "install_user", False):
+        return InstallScope.USER
+    # Note: --project still means agent project, not skilz project
+    # So we return None here and let project_level handle it
+    return None
 
 
 def is_git_url(skill_id: str | None) -> bool:
@@ -52,10 +68,16 @@ def cmd_install(args: argparse.Namespace) -> int:
     version_spec: str | None = getattr(args, "version_spec", None)
     force_config: bool = getattr(args, "force_config", False)
     config_file: str | None = getattr(args, "config", None)  # SKILZ-50
+    install_scope: InstallScope | None = _get_install_scope(args)
 
     # Validate --config flag (SKILZ-50)
     if config_file and not project_level:
         print("Error: --config requires --project flag", file=sys.stderr)
+        return 1
+
+    # Validate scope flags don't conflict with --project
+    if install_scope and project_level:
+        print("Error: Cannot use --system/--user with --project", file=sys.stderr)
         return 1
 
     # Handle source options
@@ -101,6 +123,7 @@ def cmd_install(args: argparse.Namespace) -> int:
                 mode=mode,
                 force_config=force_config,
                 config_file=config_file,  # SKILZ-50
+                install_scope=install_scope,
             )
             return 0
         except SkilzError as e:
@@ -128,6 +151,7 @@ def cmd_install(args: argparse.Namespace) -> int:
             skill_filter_name=skill_filter_name,
             force_config=force_config,
             config_file=config_file,  # SKILZ-65: Pass custom config file
+            install_scope=install_scope,
         )
 
     try:
@@ -140,6 +164,7 @@ def cmd_install(args: argparse.Namespace) -> int:
             version_spec=version_spec,
             force_config=force_config,
             config_file=config_file,  # SKILZ-50
+            install_scope=install_scope,
         )
         return 0
     except SkilzError as e:
