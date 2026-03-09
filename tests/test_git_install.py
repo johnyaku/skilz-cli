@@ -559,6 +559,69 @@ class TestInstallFromGit:
         assert "skill2" in captured.err
         mock_cleanup.assert_called_once()
 
+    @patch("skilz.link_ops.clone_git_repo")
+    @patch("skilz.link_ops.cleanup_temp_dir")
+    @patch("skilz.installer.install_local_skill")
+    def test_skill_path_success(self, mock_install, mock_cleanup, mock_clone, tmp_path):
+        """Test --skill-path flag installs skill from specific path."""
+        # Create a skill in a nested directory
+        skill_dir = tmp_path / "src" / "skills" / "my-tool"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: my-tool\n---\n")
+
+        mock_clone.return_value = tmp_path
+
+        result = install_from_git(
+            git_url="https://github.com/test/repo.git",
+            skill_path="src/skills/my-tool",
+        )
+
+        assert result == 0
+        assert mock_install.call_count == 1
+        call_kwargs = mock_install.call_args[1]
+        assert call_kwargs["skill_name"] == "my-tool"
+        mock_cleanup.assert_called_once()
+
+    @patch("skilz.link_ops.clone_git_repo")
+    @patch("skilz.link_ops.cleanup_temp_dir")
+    def test_skill_path_not_found(self, mock_cleanup, mock_clone, tmp_path, capsys):
+        """Test --skill-path flag shows error when path has no SKILL.md."""
+        # Create directory without SKILL.md
+        (tmp_path / "src" / "wrong-path").mkdir(parents=True)
+
+        mock_clone.return_value = tmp_path
+
+        result = install_from_git(
+            git_url="https://github.com/test/repo.git",
+            skill_path="src/wrong-path",
+        )
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "No SKILL.md found at" in captured.err
+        assert "src/wrong-path" in captured.err
+        mock_cleanup.assert_called_once()
+
+    @patch("skilz.link_ops.clone_git_repo")
+    @patch("skilz.link_ops.cleanup_temp_dir")
+    @patch("skilz.installer.install_local_skill")
+    def test_skill_path_with_leading_dot_slash(self, mock_install, mock_cleanup, mock_clone, tmp_path):
+        """Test --skill-path handles ./prefix correctly."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("---\nname: my-skill\n---\n")
+
+        mock_clone.return_value = tmp_path
+
+        result = install_from_git(
+            git_url="https://github.com/test/repo.git",
+            skill_path="./my-skill",
+        )
+
+        assert result == 0
+        assert mock_install.call_count == 1
+        mock_cleanup.assert_called_once()
+
 
 class TestFindSkillsFromMarketplace:
     """Tests for find_skills_from_marketplace function."""

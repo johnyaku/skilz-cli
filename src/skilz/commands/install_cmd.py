@@ -139,6 +139,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         install_all = getattr(args, "install_all", False)
         yes_all = getattr(args, "yes_all", False)
         skill_filter_name: str | None = getattr(args, "skill", None)
+        skill_path: str | None = getattr(args, "skill_path", None)
 
         return install_from_git(
             git_url=git_url,
@@ -149,6 +150,7 @@ def cmd_install(args: argparse.Namespace) -> int:
             install_all=install_all,
             yes_all=yes_all,
             skill_filter_name=skill_filter_name,
+            skill_path=skill_path,
             force_config=force_config,
             config_file=config_file,  # SKILZ-65: Pass custom config file
             install_scope=install_scope,

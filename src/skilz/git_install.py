@@ -272,6 +272,7 @@ def install_from_git(
     install_all: bool = False,
     yes_all: bool = False,
     skill_filter_name: str | None = None,
+    skill_path: str | None = None,
     force_config: bool = False,
     config_file: str | None = None,  # SKILZ-65: Custom config file for git installs
     install_scope: InstallScope | None = None,  # Scoped install destination
@@ -288,6 +289,7 @@ def install_from_git(
         install_all: If True, install all skills without prompting.
         yes_all: If True (global -y flag), install all without prompting.
         skill_filter_name: If provided, install only the skill with this name.
+        skill_path: If provided, path to skill within the repository (e.g., "src/skills/my-tool").
         force_config: If True, write to config files even for native agents.
         config_file: Optional custom config file to update (requires project_level=True).
         install_scope: If set, install to skilz-managed directory instead of agent directory.
@@ -314,10 +316,32 @@ def install_from_git(
         if verbose:
             print(f"Cloned to: {temp_dir}")
 
-        # Step 2: Find all skills (try marketplace.json first, then recursive search)
-        skills = find_skills_from_marketplace(temp_dir)
-        if not skills:
-            skills = find_skills_in_repo(temp_dir)
+        # Step 2: Find skills - use explicit path, marketplace.json, or recursive search
+        if skill_path:
+            # Direct path provided - validate and use it
+            skill_dir = temp_dir / skill_path.lstrip("./")
+            skill_md = skill_dir / "SKILL.md"
+            if not skill_md.exists():
+                print(
+                    f"Error: No SKILL.md found at '{skill_path}' in repository.",
+                    file=sys.stderr,
+                )
+                return 1
+            skill_name = parse_skill_name(skill_md)
+            skills = [
+                GitSkillInfo(
+                    skill_name=skill_name,
+                    skill_path=skill_dir,
+                    relative_path=skill_path.lstrip("./"),
+                )
+            ]
+            if verbose:
+                print(f"Using skill at path: {skill_path}")
+        else:
+            # Auto-discover skills
+            skills = find_skills_from_marketplace(temp_dir)
+            if not skills:
+                skills = find_skills_in_repo(temp_dir)
 
         if not skills:
             print(

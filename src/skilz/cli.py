@@ -183,6 +183,11 @@ For detailed help: skilz <command> --help
         help="Install specific skill by name from multi-skill repository (with -g/--git)",
     )
     install_parser.add_argument(
+        "--skill-path",
+        metavar="PATH",
+        help="Path to skill within repository (with -g/--git). Example: --skill-path src/skills/my-tool",
+    )
+    install_parser.add_argument(
         "--force-config",
         action="store_true",
         dest="force_config",
