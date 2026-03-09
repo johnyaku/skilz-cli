@@ -1,7 +1,7 @@
-installed_at: '2026-02-16T05:35:16+00:00'
+installed_at: '2026-03-09T05:03:19+00:00'
 skill_id: git/test-skill
 git_repo: https://github.com/test/repo
-skill_path: /private/var/folders/c2/23jm52w977q_lbyjfb3453hh0000gp/T/tmp5bh828ln/test-skill
+skill_path: /private/var/folders/c2/23jm52w977q_lbyjfb3453hh0000gp/T/tmpjfr764zd/test-skill
 git_sha: local
 skilz_version: 1.10.0
 install_mode: copy

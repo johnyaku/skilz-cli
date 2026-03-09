@@ -96,20 +96,20 @@ def get_registry_path_for_scope(scope: InstallScope, project_root: Path | None =
     """
     match scope:
         case InstallScope.SYSTEM:
-            # System registry in XDG config location
-            config_dirs = get_xdg_config_dirs()
-            return config_dirs[0] / "skilz" / "registry.yaml"
+            # System registry in XDG data location (alongside skills)
+            data_dirs = get_xdg_data_dirs()
+            return data_dirs[0] / "skilz" / "registry.yaml"
         case InstallScope.USER:
-            return Path.home() / ".skilz" / "registry.yaml"
+            return get_xdg_data_home() / "skilz" / "registry.yaml"
         case InstallScope.PROJECT:
             if not project_root:
                 project_root = find_project_root() or Path.cwd()
             return project_root / ".skilz" / "registry.yaml"
         case InstallScope.AGENT:
             # Default to user registry for agent installs
-            return Path.home() / ".skilz" / "registry.yaml"
+            return get_xdg_data_home() / "skilz" / "registry.yaml"
     # Should never reach here
-    return Path.home() / ".skilz" / "registry.yaml"
+    return get_xdg_data_home() / "skilz" / "registry.yaml"
 
 
 # Keys that use cascade (most-specific wins)

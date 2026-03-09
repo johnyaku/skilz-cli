@@ -58,7 +58,8 @@ class TestGetRegistryPaths:
         paths = get_registry_paths(temp_dir)
         assert len(paths) >= 2
         assert paths[0] == temp_dir / ".skilz" / "registry.yaml"
-        assert paths[1] == Path.home() / ".skilz" / "registry.yaml"
+        # User registry is in XDG data location
+        assert paths[1] == Path.home() / ".local" / "share" / "skilz" / "registry.yaml"
 
     def test_project_path_first(self, temp_dir):
         """Project path should have higher priority than user path."""
@@ -79,7 +80,8 @@ class TestGetRegistryPaths:
 
         assert len(paths) == 3
         assert paths[0] == temp_dir / ".skilz" / "registry.yaml"
-        assert paths[1] == Path.home() / ".skilz" / "registry.yaml"
+        # User registry is in XDG data location
+        assert paths[1] == Path.home() / ".local" / "share" / "skilz" / "registry.yaml"
         assert paths[2] == shared_registry
 
     def test_registry_sources_with_tilde_expansion(self, temp_dir):
@@ -96,7 +98,8 @@ class TestGetRegistryPaths:
 
     def test_registry_sources_no_duplicates(self, temp_dir):
         """Should not add duplicate paths."""
-        user_registry = Path.home() / ".skilz" / "registry.yaml"
+        # User registry is now in XDG data location
+        user_registry = Path.home() / ".local" / "share" / "skilz" / "registry.yaml"
 
         with patch(
             "skilz.registry.resolve_config",

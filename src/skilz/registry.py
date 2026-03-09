@@ -44,7 +44,7 @@ def get_registry_paths(project_dir: Path | None = None) -> list[Path]:
 
     Order:
     1. Project-level registry (.skilz/registry.yaml) - highest priority
-    2. User-level registry (~/.skilz/registry.yaml)
+    2. User-level registry (~/.local/share/skilz/registry.yaml)
     3. Configured registry_sources (from config scopes, merged)
 
     Args:
@@ -54,6 +54,8 @@ def get_registry_paths(project_dir: Path | None = None) -> list[Path]:
     Returns:
         List of registry paths to check, in order of priority.
     """
+    from skilz.config import get_xdg_data_home
+
     paths = []
 
     # Project-level registry (highest priority)
@@ -61,8 +63,8 @@ def get_registry_paths(project_dir: Path | None = None) -> list[Path]:
     project_registry = project / ".skilz" / "registry.yaml"
     paths.append(project_registry)
 
-    # User-level registry
-    user_registry = Path.home() / ".skilz" / "registry.yaml"
+    # User-level registry (XDG data location, alongside skills)
+    user_registry = get_xdg_data_home() / "skilz" / "registry.yaml"
     paths.append(user_registry)
 
     # Configured registry_sources (merged from all config scopes)
