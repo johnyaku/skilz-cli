@@ -304,9 +304,11 @@ class TestGetConfigWithOrigins:
 
     def test_shows_default_origin(self, tmp_path: Path) -> None:
         """Should show 'default' for values from defaults."""
-        result = get_config_with_origins(tmp_path)
-        value, origin = result["claude_code_home"]
-        assert origin == "default"
+        # Use isolated XDG config to ensure no real user config is read
+        with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(tmp_path / "config")}):
+            result = get_config_with_origins(tmp_path)
+            value, origin = result["claude_code_home"]
+            assert origin == "default"
 
     def test_shows_user_origin(self, tmp_path: Path) -> None:
         """Should show 'user' for values from user config."""

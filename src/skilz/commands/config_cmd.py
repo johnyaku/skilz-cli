@@ -397,15 +397,24 @@ def cmd_config_init(args: argparse.Namespace) -> int:
     Initialize or modify configuration interactively.
 
     With -y flag, uses defaults without prompting.
+    Respects --system, --user, --project, --local scope flags.
     """
     verbose = getattr(args, "verbose", False)
     yes_flag = getattr(args, "yes", False) or getattr(args, "yes_all", False)
+    scope = _get_selected_scope(args) or ConfigScope.USER  # Default to user scope
+    project_root = find_project_root()
 
+    # Validate scope
+    if scope in (ConfigScope.PROJECT, ConfigScope.LOCAL) and project_root is None:
+        print(f"Cannot init {scope.value} config: not in a project directory", file=sys.stderr)
+        return 1
+
+    config_path = get_scope_config_path(scope, project_root)
     current_config = get_effective_config()
 
     print()
-    print("Skilz Configuration Setup")
-    print("-" * 26)
+    print(f"Skilz Configuration Setup ({scope.value})")
+    print("-" * (28 + len(scope.value)))
     print()
 
     if yes_flag:
@@ -442,11 +451,11 @@ def cmd_config_init(args: argparse.Namespace) -> int:
             return 0
         new_config["agent_default"] = None if agent == "auto" else agent
 
-    # Save configuration
+    # Save configuration to the selected scope
     try:
-        save_config(new_config)
+        path = save_scope_config(scope, new_config, project_root)
         print()
-        print(f"Configuration saved to {CONFIG_PATH}")
+        print(f"Configuration saved to {path}")
 
         if verbose:
             print()

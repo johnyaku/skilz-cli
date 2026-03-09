@@ -25,7 +25,9 @@ def mock_config_path(tmp_path):
     config_file = config_dir / "settings.json"
     with patch.object(config, "CONFIG_DIR", config_dir):
         with patch.object(config, "CONFIG_PATH", config_file):
-            yield config_file
+            # Also mock get_xdg_config_home for save_scope_config
+            with patch("skilz.config_scopes.get_xdg_config_home", return_value=tmp_path / ".config"):
+                yield config_file
 
 
 class TestFormatValue:
@@ -151,7 +153,10 @@ class TestCmdConfigInit:
 
     def test_init_with_yes_flag(self, mock_config_path, capsys):
         """Should use defaults with -y flag."""
-        args = argparse.Namespace(verbose=False, yes=True, yes_all=False)
+        args = argparse.Namespace(
+            verbose=False, yes=True, yes_all=False,
+            system=False, user_scope=False, project=False, local=False
+        )
         result = cmd_config_init(args)
 
         assert result == 0
@@ -161,7 +166,10 @@ class TestCmdConfigInit:
 
     def test_init_with_yes_all_flag(self, mock_config_path, capsys):
         """Should use defaults with --yes-all flag."""
-        args = argparse.Namespace(verbose=False, yes=False, yes_all=True)
+        args = argparse.Namespace(
+            verbose=False, yes=False, yes_all=True,
+            system=False, user_scope=False, project=False, local=False
+        )
         result = cmd_config_init(args)
 
         assert result == 0
@@ -170,7 +178,10 @@ class TestCmdConfigInit:
 
     def test_init_interactive_cancelled(self, mock_config_path, capsys):
         """Should handle cancelled interactive input."""
-        args = argparse.Namespace(verbose=False, yes=False, yes_all=False)
+        args = argparse.Namespace(
+            verbose=False, yes=False, yes_all=False,
+            system=False, user_scope=False, project=False, local=False
+        )
 
         with patch("builtins.input", side_effect=KeyboardInterrupt):
             result = cmd_config_init(args)
@@ -181,7 +192,10 @@ class TestCmdConfigInit:
 
     def test_init_interactive_completes(self, mock_config_path, capsys):
         """Should complete interactive setup."""
-        args = argparse.Namespace(verbose=False, yes=False, yes_all=False)
+        args = argparse.Namespace(
+            verbose=False, yes=False, yes_all=False,
+            system=False, user_scope=False, project=False, local=False
+        )
 
         # Simulate entering values (including shell completion choice)
         inputs = iter(
