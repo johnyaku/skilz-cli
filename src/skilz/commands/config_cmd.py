@@ -398,6 +398,10 @@ def cmd_config_init(args: argparse.Namespace) -> int:
 
     With -y flag, uses defaults without prompting.
     Respects --system, --user, --project, --local scope flags.
+
+    Scope-aware prompts:
+    - user: claude_code_home, open_code_home, agent_default
+    - system/project/local: skill_dirs, registry_sources, agent_default
     """
     verbose = getattr(args, "verbose", False)
     yes_flag = getattr(args, "yes", False) or getattr(args, "yes_all", False)
@@ -418,30 +422,65 @@ def cmd_config_init(args: argparse.Namespace) -> int:
     print()
 
     if yes_flag:
-        # Non-interactive: use defaults
-        new_config = DEFAULTS.copy()
+        # Non-interactive: use scope-appropriate defaults
+        if scope == ConfigScope.USER:
+            new_config = {
+                "claude_code_home": DEFAULTS["claude_code_home"],
+                "open_code_home": DEFAULTS["open_code_home"],
+                "agent_default": DEFAULTS["agent_default"],
+            }
+        else:
+            # For system/project/local: empty config (inherits from defaults)
+            new_config = {}
         print("Using default configuration...")
     else:
-        # Interactive mode
+        # Interactive mode - scope-aware prompts
         new_config = {}
 
-        # Claude Code home
-        claude_default = current_config.get("claude_code_home") or DEFAULTS["claude_code_home"]
-        claude_home = prompt_value("Claude Code home", claude_default)
-        if claude_home is None:
-            print("Cancelled.")
-            return 0
-        new_config["claude_code_home"] = claude_home
+        if scope == ConfigScope.USER:
+            # User scope: agent home directories
+            claude_default = current_config.get("claude_code_home") or DEFAULTS["claude_code_home"]
+            claude_home = prompt_value("Claude Code home", claude_default)
+            if claude_home is None:
+                print("Cancelled.")
+                return 0
+            new_config["claude_code_home"] = claude_home
 
-        # OpenCode home
-        opencode_default = current_config.get("open_code_home") or DEFAULTS["open_code_home"]
-        opencode_home = prompt_value("OpenCode home", opencode_default)
-        if opencode_home is None:
-            print("Cancelled.")
-            return 0
-        new_config["open_code_home"] = opencode_home
+            opencode_default = current_config.get("open_code_home") or DEFAULTS["open_code_home"]
+            opencode_home = prompt_value("OpenCode home", opencode_default)
+            if opencode_home is None:
+                print("Cancelled.")
+                return 0
+            new_config["open_code_home"] = opencode_home
+        else:
+            # System/project/local: shared skill locations
+            skill_dirs_hint = {
+                ConfigScope.SYSTEM: "/usr/local/share/skilz/skills, /opt/team/skills",
+                ConfigScope.PROJECT: ".skilz/skills",
+                ConfigScope.LOCAL: ".skilz/skills",
+            }.get(scope, "")
 
-        # Default agent
+            print(f"Add shared skill directories (comma-separated, empty to skip)")
+            if skill_dirs_hint:
+                print(f"  Example: {skill_dirs_hint}")
+            skill_dirs_input = prompt_value("Skill directories", "")
+            if skill_dirs_input is None:
+                print("Cancelled.")
+                return 0
+            if skill_dirs_input:
+                new_config["skill_dirs"] = [d.strip() for d in skill_dirs_input.split(",") if d.strip()]
+
+            print()
+            print("Add shared registry sources (comma-separated, empty to skip)")
+            registry_input = prompt_value("Registry sources", "")
+            if registry_input is None:
+                print("Cancelled.")
+                return 0
+            if registry_input:
+                new_config["registry_sources"] = [r.strip() for r in registry_input.split(",") if r.strip()]
+
+        # Default agent (all scopes)
+        print()
         agent_choices = ["claude", "opencode", "auto"]
         current_agent = current_config.get("agent_default")
         agent_default = current_agent if current_agent in VALID_AGENTS else "auto"
@@ -449,7 +488,8 @@ def cmd_config_init(args: argparse.Namespace) -> int:
         if agent is None:
             print("Cancelled.")
             return 0
-        new_config["agent_default"] = None if agent == "auto" else agent
+        if agent != "auto":
+            new_config["agent_default"] = agent
 
     # Save configuration to the selected scope
     try:
@@ -461,8 +501,7 @@ def cmd_config_init(args: argparse.Namespace) -> int:
             print()
             print("Saved values:")
             for key, value in new_config.items():
-                if value != DEFAULTS.get(key):
-                    print(f"  {key}: {value}")
+                print(f"  {key}: {value}")
 
     except OSError as e:
         print(f"Error saving configuration: {e}", file=sys.stderr)
